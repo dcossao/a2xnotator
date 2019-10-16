@@ -33,7 +33,7 @@ class DB():
         """
         conn = None
         try:
-            conn = sqlite3.connect(db_file)
+            conn = sqlite3.connect(db_file, check_same_thread=False)
         except Exception as e:
             print(e)
 
@@ -44,7 +44,11 @@ class DB():
         return self.conn
 
     def sqlite_2_pandas(self, table):
-        cur = self.conn.cursor()
+        try:
+            cur = self.conn.cursor()
+        except Exception as e:
+            return e
+
         cur.execute("SELECT * FROM `{}`".format(table))
         return pd.DataFrame(cur.fetchall(), columns=[desc[0] for desc in cur.description])
 
@@ -55,19 +59,35 @@ class DB():
         self.conn.commit()
         return cur.lastrowid
 
+    def update_table(self, table, update, where):
+        set_string = ", ".join([f"{key} = {value}" for key, value in update.items()])
+        where_string = " OR ".join([f"{key} = {value}" for key, value in where.items()])
+        sql = f"UPDATE {table} SET {set_string} WHERE {where_string}"
+        cur = self.conn.cursor()
+        cur.execute(sql)
+        self.conn.commit()
+        return cur
+
+
+db = DB('db.sqlite3')
 
 def get_new_batch():
     # call active learning to get a batch
     pass
 
 
-def get_incomplete_batch(batches_2_users):
+def get_incomplete_batch():
+    batches_2_users = db.sqlite_2_pandas("api_project_users")
     assignment_counts = batches_2_users.groupby("project_id").count().reset_index()
-    incomplete_batch_id = assignment_counts[assignment_counts["user_id"] < NUMBER_VOTES]["project_id"].iloc[0]
+    incomplete_batches = assignment_counts[assignment_counts["user_id"] < NUMBER_VOTES]["project_id"].values
+    if len(incomplete_batches) > 0:
+        incomplete_batch_id = incomplete_batches[0]
+    else:
+        incomplete_batch_id = max(db.sqlite_2_pandas("api_project")["id"].values)
     return incomplete_batch_id
 
 
-def assign_project(db, user_id, project_id):
+def assign_project(user_id, project_id):
     return db.insert_sqlite("api_project_users", columns=PROJECT_2_USER_COLS, values=[project_id, user_id])
 
 
@@ -80,9 +100,12 @@ def pull_data():
     pass
 
 
-if __name__ == "__main__":
-    db = DB('db.sqlite3')
-    batches = db.sqlite_2_pandas("api_project")
-    batches_2_users = db.sqlite_2_pandas("api_project_users")
-    samples = db.sqlite_2_pandas("api_document")
-    print(get_incomplete_batch(batches_2_users))
+def setup_batch(user_id):
+    batch_id = get_incomplete_batch()
+    assign_project(int(user_id), int(daemon.get_incomplete_batch()))
+
+# if __name__ == "__main__":
+#     batches = db.sqlite_2_pandas("api_project")
+#     batches_2_users = db.sqlite_2_pandas("api_project_users")
+#     samples = db.sqlite_2_pandas("api_document")
+#     print(get_incomplete_batch(batches_2_users))
