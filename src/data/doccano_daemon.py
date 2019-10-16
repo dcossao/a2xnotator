@@ -20,7 +20,7 @@ PROJECT_COLS = [
 PROJECT_2_USER_COLS = ["project_id", "user_id"]
 
 
-class DB():
+class DB:
 
     def __init__(self, db_file):
         self.conn = self.create_connection(db_file)
@@ -63,13 +63,16 @@ class DB():
         set_string = ", ".join([f"{key} = {value}" for key, value in update.items()])
         where_string = " OR ".join([f"{key} = {value}" for key, value in where.items()])
         sql = f"UPDATE {table} SET {set_string} WHERE {where_string}"
+        print(sql)
         cur = self.conn.cursor()
         cur.execute(sql)
         self.conn.commit()
+        cur.close()
         return cur
 
 
 db = DB('db.sqlite3')
+
 
 def get_new_batch():
     # call active learning to get a batch
@@ -79,19 +82,20 @@ def get_new_batch():
 def get_incomplete_batch():
     batches_2_users = db.sqlite_2_pandas("api_project_users")
     assignment_counts = batches_2_users.groupby("project_id").count().reset_index()
-    incomplete_batches = assignment_counts[assignment_counts["user_id"] < NUMBER_VOTES]["project_id"].values
+    incomplete_batches = assignment_counts.loc[assignment_counts["user_id"] < NUMBER_VOTES, 'project_id'].values
     if len(incomplete_batches) > 0:
-        incomplete_batch_id = incomplete_batches[0]
+        return incomplete_batches[0]
     else:
-        incomplete_batch_id = max(db.sqlite_2_pandas("api_project")["id"].values)
-    return incomplete_batch_id
+        return -1
+    #     incomplete_batch_id = max(db.sqlite_2_pandas("api_project")["id"].values)
+    # return incomplete_batch_id
 
 
 def assign_project(user_id, project_id):
     return db.insert_sqlite("api_project_users", columns=PROJECT_2_USER_COLS, values=[project_id, user_id])
 
 
-def insert_new_project_db(db):
+def insert_new_project_db():
     return db.insert_sqlite("api_project", columns=PROJECT_COLS,
                             values=["x", "desc", "guideline", 0, 0, "DocumentClassification", 1, 15, 0])
 
@@ -102,7 +106,11 @@ def pull_data():
 
 def setup_batch(user_id):
     batch_id = get_incomplete_batch()
-    assign_project(int(user_id), int(daemon.get_incomplete_batch()))
+    if batch_id == -1:
+        pass
+    else:
+        pass
+    assign_project(int(user_id), int(get_incomplete_batch()))
 
 # if __name__ == "__main__":
 #     batches = db.sqlite_2_pandas("api_project")
